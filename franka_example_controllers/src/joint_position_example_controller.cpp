@@ -38,7 +38,7 @@ JointPositionExampleController::state_interface_configuration() const {
   controller_interface::InterfaceConfiguration config;
   config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
   for (int i = 1; i <= num_joints; ++i) {
-    config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/" + k_HW_IF_INITIAL_POSITION);
+    config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/position");
   }
   return config;
 }
