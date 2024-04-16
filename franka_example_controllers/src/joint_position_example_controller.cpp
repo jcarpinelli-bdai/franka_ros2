@@ -54,7 +54,8 @@ controller_interface::return_type JointPositionExampleController::update(
   }
 
   elapsed_time_ = elapsed_time_ + trajectory_period;
-  double delta_angle = M_PI / 16 * (1 - std::cos(M_PI / 5.0 * elapsed_time_)) * 0.2;
+  double delta_angle = 1e-5; // values on the order of 10^-5 and above throw exceptions
+  // double delta_angle = M_PI / 16 * (1 - std::cos(M_PI / 5.0 * elapsed_time_)) * 0.2;
 
   for (int i = 0; i < num_joints; ++i) {
     if (i == 4) {
