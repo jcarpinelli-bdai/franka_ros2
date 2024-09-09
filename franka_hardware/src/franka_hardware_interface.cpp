@@ -133,7 +133,13 @@ CallbackReturn FrankaHardwareInterface::on_activate(
 CallbackReturn FrankaHardwareInterface::on_deactivate(
     const rclcpp_lifecycle::State& /*previous_state*/) {
   RCLCPP_INFO(getLogger(), "trying to Stop...");
-  robot_->stopRobot();
+  try {
+    robot_->stopRobot();
+  } catch (const franka::Exception& e) {
+    RCLCPP_ERROR(getLogger(), e.what());
+    return CallbackReturn::ERROR;
+  }
+
   RCLCPP_INFO(getLogger(), "Stopped");
   return CallbackReturn::SUCCESS;
 }
@@ -165,10 +171,15 @@ void FrankaHardwareInterface::initializePositionCommands(const franka::RobotStat
 
 hardware_interface::return_type FrankaHardwareInterface::read(const rclcpp::Time& /*time*/,
                                                               const rclcpp::Duration& /*period*/) {
-  if (hw_franka_model_ptr_ == nullptr) {
-    hw_franka_model_ptr_ = robot_->getModel();
+  try {
+    if (hw_franka_model_ptr_ == nullptr) {
+      hw_franka_model_ptr_ = robot_->getModel();
+    }
+    hw_franka_robot_state_ = robot_->readOnce();
+  } catch (const franka::Exception& e) {
+    RCLCPP_ERROR(getLogger(), e.what());
+    return hardware_interface::return_type::ERROR;
   }
-  hw_franka_robot_state_ = robot_->readOnce();
 
   initializePositionCommands(hw_franka_robot_state_);
 
@@ -193,29 +204,34 @@ hardware_interface::return_type FrankaHardwareInterface::write(const rclcpp::Tim
     return hardware_interface::return_type::ERROR;
   }
 
-  if (velocity_joint_interface_running_) {
-    robot_->writeOnce(hw_velocity_commands_);
-  } else if (effort_interface_running_) {
-    robot_->writeOnce(hw_effort_commands_);
-  } else if (position_joint_interface_running_ && !first_position_update_ &&
-             !initial_joint_position_update_) {
-    robot_->writeOnce(hw_position_commands_);
-  } else if (velocity_cartesian_interface_running_ && elbow_command_interface_running_ &&
-             !first_elbow_update_) {
-    // Wait until the first read pass after robot controller is activated to write the elbow
-    // command to the robot
-    robot_->writeOnce(hw_cartesian_velocities_, hw_elbow_command_);
-  } else if (pose_cartesian_interface_running_ && elbow_command_interface_running_ &&
-             !first_cartesian_pose_update_ && !first_elbow_update_) {
-    // Wait until the first read pass after robot controller is activated to write the elbow
-    // command to the robot
-    robot_->writeOnce(hw_cartesian_pose_, hw_elbow_command_);
-  } else if (pose_cartesian_interface_running_ && !first_cartesian_pose_update_) {
-    // Wait until the first read pass after robot controller is activated to write the cartesian
-    // pose
-    robot_->writeOnce(hw_cartesian_pose_);
-  } else if (velocity_cartesian_interface_running_ && !elbow_command_interface_running_) {
-    robot_->writeOnce(hw_cartesian_velocities_);
+  try {
+    if (velocity_joint_interface_running_) {
+      robot_->writeOnce(hw_velocity_commands_);
+    } else if (effort_interface_running_) {
+      robot_->writeOnce(hw_effort_commands_);
+    } else if (position_joint_interface_running_ && !first_position_update_ &&
+               !initial_joint_position_update_) {
+      robot_->writeOnce(hw_position_commands_);
+    } else if (velocity_cartesian_interface_running_ && elbow_command_interface_running_ &&
+               !first_elbow_update_) {
+      // Wait until the first read pass after robot controller is activated to write the elbow
+      // command to the robot
+      robot_->writeOnce(hw_cartesian_velocities_, hw_elbow_command_);
+    } else if (pose_cartesian_interface_running_ && elbow_command_interface_running_ &&
+               !first_cartesian_pose_update_ && !first_elbow_update_) {
+      // Wait until the first read pass after robot controller is activated to write the elbow
+      // command to the robot
+      robot_->writeOnce(hw_cartesian_pose_, hw_elbow_command_);
+    } else if (pose_cartesian_interface_running_ && !first_cartesian_pose_update_) {
+      // Wait until the first read pass after robot controller is activated to write the cartesian
+      // pose
+      robot_->writeOnce(hw_cartesian_pose_);
+    } else if (velocity_cartesian_interface_running_ && !elbow_command_interface_running_) {
+      robot_->writeOnce(hw_cartesian_velocities_);
+    }
+  } catch (const franka::Exception& e) {
+    RCLCPP_ERROR(getLogger(), e.what());
+    return hardware_interface::return_type::ERROR;
   }
 
   return hardware_interface::return_type::OK;
@@ -313,75 +329,80 @@ rclcpp::Logger FrankaHardwareInterface::getLogger() {
 hardware_interface::return_type FrankaHardwareInterface::perform_command_mode_switch(
     const std::vector<std::string>& /*start_interfaces*/,
     const std::vector<std::string>& /*stop_interfaces*/) {
-  if (!effort_interface_running_ && effort_interface_claimed_) {
-    hw_effort_commands_.fill(0);
-    robot_->stopRobot();
-    robot_->initializeTorqueInterface();
-    effort_interface_running_ = true;
-  } else if (effort_interface_running_ && !effort_interface_claimed_) {
-    robot_->stopRobot();
-    effort_interface_running_ = false;
-  }
-
-  if (!velocity_joint_interface_running_ && velocity_joint_interface_claimed_) {
-    hw_velocity_commands_.fill(0);
-    robot_->stopRobot();
-    robot_->initializeJointVelocityInterface();
-    velocity_joint_interface_running_ = true;
-  } else if (velocity_joint_interface_running_ && !velocity_joint_interface_claimed_) {
-    robot_->stopRobot();
-    velocity_joint_interface_running_ = false;
-  }
-
-  if (!position_joint_interface_running_ && position_joint_interface_claimed_) {
-    robot_->stopRobot();
-    robot_->initializeJointPositionInterface();
-    position_joint_interface_running_ = true;
-    first_position_update_ = true;
-    initial_joint_position_update_ = true;
-  } else if (position_joint_interface_running_ && !position_joint_interface_claimed_) {
-    robot_->stopRobot();
-    position_joint_interface_running_ = false;
-  }
-
-  if (!velocity_cartesian_interface_running_ && velocity_cartesian_interface_claimed_) {
-    hw_cartesian_velocities_.fill(0);
-    robot_->stopRobot();
-    robot_->initializeCartesianVelocityInterface();
-    if (!elbow_command_interface_running_ && elbow_command_interface_claimed_) {
-      elbow_command_interface_running_ = true;
-      first_elbow_update_ = true;
+  try {
+    if (!effort_interface_running_ && effort_interface_claimed_) {
+      hw_effort_commands_.fill(0);
+      robot_->stopRobot();
+      robot_->initializeTorqueInterface();
+      effort_interface_running_ = true;
+    } else if (effort_interface_running_ && !effort_interface_claimed_) {
+      robot_->stopRobot();
+      effort_interface_running_ = false;
     }
-    velocity_cartesian_interface_running_ = true;
-  } else if (velocity_cartesian_interface_running_ && !velocity_cartesian_interface_claimed_) {
-    robot_->stopRobot();
-    // Elbow command interface can't be commanded without cartesian velocity or pose interface
-    if (elbow_command_interface_running_) {
-      elbow_command_interface_running_ = false;
-      elbow_command_interface_claimed_ = false;
-    }
-    velocity_cartesian_interface_running_ = false;
-  }
 
-  if (!pose_cartesian_interface_running_ && pose_cartesian_interface_claimed_) {
-    robot_->stopRobot();
-    robot_->initializeCartesianPoseInterface();
-    if (!elbow_command_interface_running_ && elbow_command_interface_claimed_) {
-      elbow_command_interface_running_ = true;
-      first_elbow_update_ = true;
-      initial_elbow_state_update_ = true;
+    if (!velocity_joint_interface_running_ && velocity_joint_interface_claimed_) {
+      hw_velocity_commands_.fill(0);
+      robot_->stopRobot();
+      robot_->initializeJointVelocityInterface();
+      velocity_joint_interface_running_ = true;
+    } else if (velocity_joint_interface_running_ && !velocity_joint_interface_claimed_) {
+      robot_->stopRobot();
+      velocity_joint_interface_running_ = false;
     }
-    pose_cartesian_interface_running_ = true;
-    initial_robot_state_update_ = true;
-    first_cartesian_pose_update_ = true;
-  } else if (pose_cartesian_interface_running_ && !pose_cartesian_interface_claimed_) {
-    robot_->stopRobot();
-    // Elbow command interface can't be commanded without cartesian pose or pose interface
-    if (elbow_command_interface_running_) {
-      elbow_command_interface_running_ = false;
-      elbow_command_interface_claimed_ = false;
+
+    if (!position_joint_interface_running_ && position_joint_interface_claimed_) {
+      robot_->stopRobot();
+      robot_->initializeJointPositionInterface();
+      position_joint_interface_running_ = true;
+      first_position_update_ = true;
+      initial_joint_position_update_ = true;
+    } else if (position_joint_interface_running_ && !position_joint_interface_claimed_) {
+      robot_->stopRobot();
+      position_joint_interface_running_ = false;
     }
-    pose_cartesian_interface_running_ = false;
+
+    if (!velocity_cartesian_interface_running_ && velocity_cartesian_interface_claimed_) {
+      hw_cartesian_velocities_.fill(0);
+      robot_->stopRobot();
+      robot_->initializeCartesianVelocityInterface();
+      if (!elbow_command_interface_running_ && elbow_command_interface_claimed_) {
+        elbow_command_interface_running_ = true;
+        first_elbow_update_ = true;
+      }
+      velocity_cartesian_interface_running_ = true;
+    } else if (velocity_cartesian_interface_running_ && !velocity_cartesian_interface_claimed_) {
+      robot_->stopRobot();
+      // Elbow command interface can't be commanded without cartesian velocity or pose interface
+      if (elbow_command_interface_running_) {
+        elbow_command_interface_running_ = false;
+        elbow_command_interface_claimed_ = false;
+      }
+      velocity_cartesian_interface_running_ = false;
+    }
+
+    if (!pose_cartesian_interface_running_ && pose_cartesian_interface_claimed_) {
+      robot_->stopRobot();
+      robot_->initializeCartesianPoseInterface();
+      if (!elbow_command_interface_running_ && elbow_command_interface_claimed_) {
+        elbow_command_interface_running_ = true;
+        first_elbow_update_ = true;
+        initial_elbow_state_update_ = true;
+      }
+      pose_cartesian_interface_running_ = true;
+      initial_robot_state_update_ = true;
+      first_cartesian_pose_update_ = true;
+    } else if (pose_cartesian_interface_running_ && !pose_cartesian_interface_claimed_) {
+      robot_->stopRobot();
+      // Elbow command interface can't be commanded without cartesian pose or pose interface
+      if (elbow_command_interface_running_) {
+        elbow_command_interface_running_ = false;
+        elbow_command_interface_claimed_ = false;
+      }
+      pose_cartesian_interface_running_ = false;
+    }
+  } catch (const franka::Exception& e) {
+    RCLCPP_ERROR(getLogger(), e.what());
+    return hardware_interface::return_type::ERROR;
   }
 
   // check if the elbow command is activated without cartesian command interface
