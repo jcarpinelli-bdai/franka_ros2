@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <chrono>
 #include <fmt/core.h>
 #include <algorithm>
 #include <cmath>
@@ -165,6 +166,19 @@ void FrankaHardwareInterface::initializePositionCommands(const franka::RobotStat
 
 hardware_interface::return_type FrankaHardwareInterface::read(const rclcpp::Time& /*time*/,
                                                               const rclcpp::Duration& /*period*/) {
+  static std::size_t count = 0;
+  static std::chrono::time_point prev_time;
+
+  std::chrono::time_point now = std::chrono::steady_clock::now();
+
+  if (count > 0){
+    auto dt = now - prev_time;
+    std::cout << "Delta time: " << std::chrono::duration_cast<std::chrono::duration<double>>(dt).count() << "s" << std::endl;
+    prev_time = now;
+  }
+
+  count++;
+  
   if (hw_franka_model_ptr_ == nullptr) {
     hw_franka_model_ptr_ = robot_->getModel();
   }
