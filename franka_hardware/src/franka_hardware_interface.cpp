@@ -167,7 +167,7 @@ void FrankaHardwareInterface::initializePositionCommands(const franka::RobotStat
 hardware_interface::return_type FrankaHardwareInterface::read(const rclcpp::Time& /*time*/,
                                                               const rclcpp::Duration& /*period*/) {
   static std::size_t count = 0;
-  static std::chrono::time_point prev_time;
+  static std::chrono::time_point prev_time{};
 
   std::chrono::time_point now = std::chrono::steady_clock::now();
 
