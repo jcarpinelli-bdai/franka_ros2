@@ -173,7 +173,7 @@ hardware_interface::return_type FrankaHardwareInterface::read(const rclcpp::Time
 
   if (count > 0){
     auto dt = now - prev_time;
-    std::cout << "Delta time: " << std::chrono::duration_cast<std::chrono::duration<double>>(dt).count() << "s" << std::endl;
+    RCLCPP_WARN(getLogger(), "Delta time: %fs", std::chrono::duration_cast<std::chrono::duration<double>>(dt).count());
     prev_time = now;
   }
 
