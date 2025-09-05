@@ -182,7 +182,10 @@ hardware_interface::return_type FrankaHardwareInterface::read(const rclcpp::Time
   if (hw_franka_model_ptr_ == nullptr) {
     hw_franka_model_ptr_ = robot_->getModel();
   }
+
+  RCLCPP_WARN(getLogger(), "before read");
   hw_franka_robot_state_ = robot_->readOnce();
+  RCLCPP_WARN(getLogger(), "after read");
 
   initializePositionCommands(hw_franka_robot_state_);
 
